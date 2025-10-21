@@ -82,9 +82,13 @@ def send_to_n8n(
         "x-timestamp": str(ts),
         "x-request-id": request_id,
         "x-file-digest": file_digest_header,
+        "x-strict-mode": str(strict_mode).lower(),
+        "x-strategy-json": strategy_json or "",
+        "x-overrides-json": overrides_json or "",
         # 'content-type' left to requests for multipart boundary
     }
 
+    # Also send as form data for backwards compatibility
     data = {
         "strict_mode": str(strict_mode).lower(),
         "strategy_json": strategy_json or "",
@@ -180,14 +184,24 @@ if (send_clicked or rerun_clicked) and not st.session_state.get("stored_file_byt
 js = None
 if send_clicked or rerun_clicked:
     try:
-        # helpful debug: show what we're about to send on re-run
-        if rerun_clicked:
-            with st.expander("Outgoing payload (debug)", expanded=False):
-                st.code(json.dumps({
+        # helpful debug: show what we're about to send
+        if rerun_clicked or send_clicked:
+            with st.expander("🔍 Outgoing payload (debug)", expanded=True):
+                payload_debug = {
                     "strict_mode": bool(st.session_state.get("strict_mode", True)),
                     "strategy_json": strategy_json,
                     "overrides_json": overrides_json
-                }, indent=2), language="json")
+                }
+                st.code(json.dumps(payload_debug, indent=2), language="json")
+
+                # Also show parsed overrides
+                if overrides_json:
+                    try:
+                        parsed_overrides = json.loads(overrides_json)
+                        st.write("**Parsed overrides:**")
+                        st.json(parsed_overrides)
+                    except Exception as e:
+                        st.error(f"Error parsing overrides_json: {e}")
 
         signed, request_id, r = send_to_n8n(
             base_url=st.session_state.get("base_url", "").strip(),
