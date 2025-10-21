@@ -163,7 +163,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Collect up to 3 inputs safely\nconst inputs =\n  []\n    .concat($input.all(0) || [])\n    .concat($input.all(1) || [])\n    .concat($input.all(2) || [])\n    .map(i => i?.json || {});\n\n// Detect data vs agent payloads\nconst dataSide = inputs.find(x => Array.isArray(x.rows) && Array.isArray(x.headers)) || {};\nconst agentSide = inputs.find(x =>\n  Array.isArray(x.mapping) ||\n  x.mapping_template ||\n  (x.source && x.source.type)\n) || {};\n\n// Optional debug to inspect wiring\nconst _merge_debug = {\n  inputs_seen: inputs.length,\n  saw_rows: !!dataSide.rows,\n  saw_headers: !!dataSide.headers,\n  saw_mapping: !!agentSide.mapping,\n  saw_source: !!(agentSide.source && agentSide.source.type),\n  input_keys: inputs.map(o => Object.keys(o))\n};\n\nreturn [{\n  json: { ...dataSide, ...agentSide, _merge_debug }\n}];\n"
+        "jsCode": "// Collect all inputs safely\nconst inputs =\n  []\n    .concat($input.all(0) || [])\n    .concat($input.all(1) || [])\n    .concat($input.all(2) || [])\n    .concat($input.all(3) || [])\n    .map(i => i?.json || {});\n\n// Detect data vs agent vs metadata (form data) payloads\nconst dataSide = inputs.find(x => Array.isArray(x.rows) && Array.isArray(x.headers)) || {};\nconst agentSide = inputs.find(x =>\n  Array.isArray(x.mapping) ||\n  x.mapping_template ||\n  (x.source && x.source.type)\n) || {};\nconst metadataSide = inputs.find(x => \n  x.overrides_json !== undefined || \n  x.strategy_json !== undefined ||\n  x.strict_mode !== undefined\n) || {};\n\nconsole.log('=== MERGE DEBUG ===');\nconsole.log('Metadata side keys:', Object.keys(metadataSide));\nconsole.log('overrides_json:', metadataSide.overrides_json?.substring?.(0, 100));\nconsole.log('strategy_json:', metadataSide.strategy_json);\nconsole.log('strict_mode:', metadataSide.strict_mode);\n\n// Optional debug to inspect wiring\nconst _merge_debug = {\n  inputs_seen: inputs.length,\n  saw_rows: !!dataSide.rows,\n  saw_headers: !!dataSide.headers,\n  saw_mapping: !!agentSide.mapping,\n  saw_source: !!(agentSide.source && agentSide.source.type),\n  saw_metadata: !!(metadataSide.overrides_json || metadataSide.strategy_json || metadataSide.strict_mode),\n  input_keys: inputs.map(o => Object.keys(o))\n};\n\nconsole.log('Merge debug:', _merge_debug);\nconsole.log('=== END MERGE DEBUG ===');\n\nreturn [{\n  json: { ...dataSide, ...agentSide, ...metadataSide, _merge_debug }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -507,6 +507,19 @@
           "name": "Google Gemini(PaLM) Api account"
         }
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "const inItem = $input.first();\nconst body = inItem.json?.body || {};\n\nconsole.log('=== EXTRACT FORM DATA DEBUG ===');\nconsole.log('body.strict_mode:', body.strict_mode);\nconsole.log('body.strategy_json:', body.strategy_json);\nconsole.log('body.overrides_json:', body.overrides_json?.substring?.(0, 100));\n\n// Output 1: Original item (continues to file processing)\n// Output 2: Form data only (bypasses file processing, goes directly to Merge)\nreturn [\n  [inItem],  // Output 1 → Verify HMAC\n  [{json: {\n    strict_mode: body.strict_mode,\n    strategy_json: body.strategy_json,\n    overrides_json: body.overrides_json\n  }}]  // Output 2 → Merge: Data + Agent\n];"
+      },
+      "id": "3a40d90e-9562-47d2-8cc0-b2d3acd8dd39",
+      "name": "Extract Form Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        400
+      ]
     }
   ],
   "pinData": {
@@ -805,7 +818,7 @@
       "main": [
         [
           {
-            "node": "Verify HMAC",
+            "node": "Extract Form Data",
             "type": "main",
             "index": 0
           }
@@ -921,6 +934,24 @@
     "Respond to Webhook (JSON)": {
       "main": [
         []
+      ]
+    },
+    "Extract Form Data": {
+      "main": [
+        [
+          {
+            "node": "Verify HMAC",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge: Data + Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },
