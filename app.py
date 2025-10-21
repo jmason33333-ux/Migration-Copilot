@@ -241,24 +241,94 @@ files = js.get("files") or {}
 assistant = js.get("assistant") or {}
 handles_list = js.get("handles_with_overflow") or []
 
-# Assistant Summary — state-aware line
+# Assistant Summary — conversational, copilot-style
+def build_conversational_summary(js_obj):
+    """Build natural language, copilot-style summary"""
+    gate = js_obj.get("gate", {}) or {}
+    qa = js_obj.get("qa", {}) or {}
+    decision_log = js_obj.get("decision_log", {}) or {}
+    handles_list = js_obj.get("handles_with_overflow") or []
+
+    needs_override = bool(gate.get("needs_override"))
+    blocking_count = int(qa.get("blocking") or 0)
+    warn_count = int(qa.get("warnings") or 0)
+    issues = qa.get("issues", [])
+
+    messages = []
+
+    # Opening line
+    if needs_override:
+        messages.append("⚠️ **Review needed before finalizing:**")
+    else:
+        messages.append("✅ **Migration ready to export!**")
+
+    # Details about products with overflow
+    if len(handles_list) > 0:
+        plural = "product has" if len(handles_list) == 1 else "products have"
+        messages.append(f"\n**{len(handles_list)} {plural} more than 3 options** (Shopify's limit).")
+
+        # Show which options were suggested
+        first_handle = handles_list[0]
+        suggested = first_handle.get('suggested_three', [])
+        if suggested:
+            messages.append(f"• I suggest keeping: **{', '.join(suggested)}** as the main options.")
+        messages.append("• Remaining options will be moved to metafields and product description.")
+
+        # List affected products
+        if len(handles_list) <= 3:
+            product_names = [h.get('title', h.get('handle')) for h in handles_list]
+            messages.append(f"• Affected: {', '.join(product_names)}")
+        else:
+            sample = [h.get('title', h.get('handle')) for h in handles_list[:2]]
+            messages.append(f"• Affected: {', '.join(sample)}, and {len(handles_list) - 2} more...")
+
+    # Blocking issues
+    if blocking_count > 0:
+        messages.append(f"\n**{blocking_count} critical issue(s) found:**")
+        # Categorize blocking issues
+        missing_titles = [i for i in issues if i.get('code') == 'REQ_MISSING_TITLE']
+        missing_prices = [i for i in issues if i.get('code') == 'REQ_MISSING_PRICE']
+
+        if missing_titles:
+            messages.append(f"• {len(missing_titles)} product(s) missing titles")
+        if missing_prices:
+            messages.append(f"• {len(missing_prices)} variant(s) missing prices")
+        messages.append("_These must be fixed before import._")
+
+    # Warnings
+    if warn_count > 0:
+        messages.append(f"\n**{warn_count} warning(s) detected:**")
+        auto_sku = [i for i in issues if i.get('code') == 'AUTO_SKU_ASSIGNED']
+        dup_variants = [i for i in issues if i.get('code') == 'DUP_VARIANT_COMBO']
+
+        if auto_sku:
+            messages.append(f"• {len(auto_sku)} SKU(s) auto-generated")
+        if dup_variants:
+            messages.append(f"• {len(dup_variants)} duplicate variant combination(s)")
+
+    # Applied fixes
+    applied = decision_log.get("overrides_applied", {}) or {}
+    applied_list = applied.get("list", [])
+    if applied_list:
+        messages.append(f"\n✨ **Applied {len(applied_list)} fix(es):**")
+
+        # Categorize fixes
+        option_fixes = [a for a in applied_list if a.get('type') == 'cap_options']
+        price_fixes = [a for a in applied_list if 'price' in a.get('type', '')]
+        title_fixes = [a for a in applied_list if 'title' in a.get('type', '')]
+
+        if option_fixes:
+            messages.append(f"• Capped options to 3 for {len(option_fixes)} product(s)")
+        if price_fixes:
+            messages.append(f"• Fixed missing prices for {len(price_fixes)} variant(s)")
+        if title_fixes:
+            messages.append(f"• Fixed missing titles for {len(title_fixes)} product(s)")
+
+    return "\n".join(messages)
+
 st.subheader("Assistant Summary")
-needs_override = bool(gate.get("needs_override"))
-reasons = gate.get("reasons") or []
-warn_count = int(qa.get("warnings") or 0)
-applied = decision_log.get("overrides_applied", {}) or {}
-applied_count = int(applied.get("count") or 0)
-
-if needs_override:
-    line = f"**Needs review:** {('; '.join(reasons) if reasons else 'See QA')}. • **Warnings:** {warn_count}"
-else:
-    line = f"**Success:** Export ready. **Applied fixes:** {applied_count} • **Warnings:** {warn_count}"
-
-extra = assistant.get("summary") or assistant.get("explain") or ""
-if extra:
-    line = f"{line}\n\n_{extra}_"
-
-st.markdown(line)
+summary_msg = build_conversational_summary(js)
+st.markdown(summary_msg)
 
 # QA / Gate details
 with st.expander("QA & Gate details", expanded=False):
@@ -267,9 +337,20 @@ with st.expander("QA & Gate details", expanded=False):
     st.write("**QA**")
     st.code(pretty_json(qa), language="json")
 
+# Confirmation message after re-run with overrides
+if rerun_clicked and js:
+    applied = decision_log.get("overrides_applied", {})
+    applied_list = applied.get("list", [])
+    if applied_list:
+        resolved_handles = list(set([item.get('handle') for item in applied_list if item.get('type') == 'cap_options']))
+        if resolved_handles:
+            st.success(f"✅ Overrides applied to {len(resolved_handles)} product(s): {', '.join(resolved_handles[:3])}{'...' if len(resolved_handles) > 3 else ''}")
+
 # Success banner & cleanup (hide overrides when fully resolved)
+applied_count = int(decision_log.get("overrides_applied", {}).get("count") or 0)
+needs_override = bool(gate.get("needs_override"))
 if applied_count > 0 and not needs_override and not handles_list:
-    st.success(f"Overrides applied to {applied_count} product(s). CSV is ready for review/download.")
+    st.success(f"All overrides applied! CSV is ready for review/download.")
     st.session_state.pop("overrides_json", None)
     st.session_state.pop("per_product_edits", None)
     try:
@@ -315,14 +396,21 @@ def render_overrides_panel(js_obj: dict):
     """Per-product overrides + quick-fix toggles. Render only if still needed."""
     st.subheader("Overrides (per product)")
 
+    # Pending changes indicator
+    has_pending_changes = bool(st.session_state.get("per_product_edits"))
+    if has_pending_changes:
+        st.info("📝 You have pending changes. Click **'Apply overrides & re-run'** at the top to submit them.")
+
     # Quick-fix toggles for strategy
-    with st.expander("Quick Fixes (Price/Title)", expanded=False):
+    with st.expander("Quick Fixes (Price/Title/SKU)", expanded=False):
         colA, colB = st.columns(2)
         with colA:
             fmp_zero = st.checkbox("Fill missing price → 0", value=False, key="fix_price_zero")
             fmp_copy = st.checkbox("Copy compare-at into price if missing", value=False, key="fix_price_copy")
         with colB:
             fmt_title = st.checkbox("Fill missing title → 'Untitled' prefix", value=False, key="fix_title_prefix")
+            sku_unique = st.checkbox("Generate unique SKUs for expanded variants", value=True, key="sku_unique",
+                                     help="When a simple product is expanded into variants, generate unique SKUs for each variant instead of keeping the parent SKU")
 
         # Build strategy patch and persist as JSON string
         try:
@@ -338,6 +426,11 @@ def render_overrides_panel(js_obj: dict):
 
         if fmt_title:
             base["fix_missing_title"] = {"mode": "prefix", "prefix": "Untitled"}
+
+        if sku_unique:
+            base["sku_generation"] = "generate_unique"
+        else:
+            base["sku_generation"] = "keep_parent"
 
         st.session_state.strategy_json = json.dumps(base)
 
@@ -379,7 +472,7 @@ def render_overrides_panel(js_obj: dict):
         payload = {"per_product": per_edits}
         st.session_state.overrides_json = json.dumps(payload, ensure_ascii=False)
 
-    st.caption("Click **Apply overrides & re-run** to apply and refresh output.")
+    st.caption("⚠️ Changes are staged locally. Click **'Apply overrides & re-run'** button at the top to submit them to the workflow.")
 
 # Render Overrides panel only if still needed
 if needs_override or handles_list:
