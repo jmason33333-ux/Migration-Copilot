@@ -853,6 +853,22 @@
           }
         ]
       ]
+    },
+    "Ensure Binary 'file'": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "SampleHeaders",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
     }
   },
   "active": true,
