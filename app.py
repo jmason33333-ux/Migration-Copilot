@@ -166,19 +166,24 @@ if uploaded is not None:
     st.session_state.stored_file_name = uploaded.name
     st.session_state.stored_file_bytes = uploaded.read()
 
-# Actions
-c_send, c_rerun = st.columns([1, 1])
+# Actions - Initial send only
+c_send = st.columns([1])[0]
 send_clicked = c_send.button("Send to Agent", type="primary", use_container_width=True)
-rerun_clicked = c_rerun.button("Apply overrides & re-run", use_container_width=True)
 
-# Resolve current JSON strings from session (set by overrides panel too)
+# Guard: need file
+if send_clicked and not st.session_state.get("stored_file_bytes"):
+    st.error("Please upload a CSV file first.")
+    st.stop()
+
+# Resolve current JSON strings from session (will be empty on first run)
 overrides_json = st.session_state.get("overrides_json") or ""
 strategy_json = st.session_state.get("strategy_json") or ""
 
-# Guard: need file
-if (send_clicked or rerun_clicked) and not st.session_state.get("stored_file_bytes"):
-    st.error("Please upload a CSV file first.")
-    st.stop()
+# Check if we should trigger a rerun (flag set by button click at bottom)
+rerun_clicked = st.session_state.get("trigger_rerun", False)
+if rerun_clicked:
+    # Clear the flag after using it
+    st.session_state.trigger_rerun = False
 
 # Do request (send or re-run)
 js = None
@@ -486,11 +491,18 @@ def render_overrides_panel(js_obj: dict):
         payload = {"per_product": per_edits}
         st.session_state.overrides_json = json.dumps(payload, ensure_ascii=False)
 
-    st.caption("⚠️ Changes are staged locally. Click **'Apply overrides & re-run'** button at the top to submit them to the workflow.")
+    st.caption("⚠️ Changes are staged locally. Click the button below to submit them to the workflow.")
 
 # Render Overrides panel only if still needed
 if needs_override or handles_list:
     render_overrides_panel(js)
+
+    # Add the "Apply overrides & re-run" button HERE, after panel renders
+    st.divider()
+    if st.button("🔄 Apply overrides & re-run", type="primary", use_container_width=True, key="rerun_btn"):
+        # Set a flag in session state to trigger the request on next rerun
+        st.session_state.trigger_rerun = True
+        st.rerun()
 
 # Footer debug
 with st.expander("Raw JSON response", expanded=False):
