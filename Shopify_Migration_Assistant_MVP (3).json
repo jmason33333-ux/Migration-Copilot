@@ -445,6 +445,7 @@
     },
     {
       "parameters": {
+        "mode": "runOnceForAllItems",
         "jsCode": "// Soft-merge available inputs (will not wait for both; prefer built-in Merge node if possible)\nlet in0=[], in1=[];\ntry { in0 = $input.all(0); } catch(_) { try { in0 = $input.all(); } catch(__) {} }\ntry { in1 = $input.all(1); } catch(_) {}\n\nconst all = [...(in0||[]), ...(in1||[])];\n\nlet rich = {};\nlet agent = {};\nfor (const it of all) {\n  const j = it?.json || {};\n  const looksRich =\n    (Array.isArray(j.preview_transformed)) ||\n    (j.files && typeof j.files === 'object') ||\n    (Array.isArray(j.mapping_template)) ||\n    (j.decision_log && typeof j.decision_log === 'object');\n  const looksAgent =\n    (j.strategy && typeof j.strategy === 'object') ||\n    (j.assistant && typeof j.assistant === 'object' && 'plan' in j.assistant);\n\n  if (looksRich && !Object.keys(rich).length) rich = j;\n  if (looksAgent && !Object.keys(agent).length) agent = j;\n}\n\nconst out = { ...rich };\nif (agent.assistant) out.assistant = { ...(rich.assistant || {}), ...agent.assistant };\nif (agent.strategy)  out.strategy  = { ...(rich.strategy  || {}), ...agent.strategy  };\nreturn [{ json: out }];\n"
       },
       "type": "n8n-nodes-base.code",
