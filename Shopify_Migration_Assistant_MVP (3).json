@@ -511,7 +511,8 @@
     },
     {
       "parameters": {
-        "jsCode": "const inItem = $input.first();\nconst body = inItem.json?.body || {};\n\nconsole.log('=== EXTRACT FORM DATA DEBUG ===');\nconsole.log('body.strict_mode:', body.strict_mode);\nconsole.log('body.strategy_json:', body.strategy_json);\nconsole.log('body.overrides_json:', body.overrides_json?.substring?.(0, 100));\n\n// Output 1: Original item (continues to file processing)\n// Output 2: Form data only (bypasses file processing, goes directly to Merge)\nreturn [\n  [inItem],  // Output 1 \u2192 Verify HMAC\n  [{json: {\n    strict_mode: body.strict_mode,\n    strategy_json: body.strategy_json,\n    overrides_json: body.overrides_json\n  }}]  // Output 2 \u2192 Merge: Data + Agent\n];"
+        "jsCode": "const inItem = $input.first();\nconst body = inItem.json?.body || {};\n\nconsole.log('=== EXTRACT FORM DATA DEBUG ===');\nconsole.log('body.strict_mode:', body.strict_mode);\nconsole.log('body.strategy_json:', body.strategy_json);\nconsole.log('body.overrides_json:', body.overrides_json?.substring?.(0, 100));\n\n// Output 1: Original item (continues to file processing)\n// Output 2: Form data only (bypasses file processing, goes directly to Merge)\nreturn [\n  [inItem],  // Output 1 \u2192 Verify HMAC\n  [{json: {\n    strict_mode: body.strict_mode,\n    strategy_json: body.strategy_json,\n    overrides_json: body.overrides_json\n  }}]  // Output 2 \u2192 Merge: Data + Agent\n];",
+        "mode": "runOnceForAllItems"
       },
       "id": "3a40d90e-9562-47d2-8cc0-b2d3acd8dd39",
       "name": "Extract Form Data",
