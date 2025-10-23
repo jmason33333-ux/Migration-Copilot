@@ -106,6 +106,21 @@ def send_to_n8n(
         signed = True
 
     url = base_url.rstrip("/") + "/" + path.lstrip("/")
+
+    # CRITICAL FIX: Pass overrides and strategy as URL query params
+    # This ensures they survive the n8n "Extract from File" node which drops metadata
+    from urllib.parse import quote
+    query_params = []
+    if overrides_json:
+        query_params.append(f"overrides={quote(overrides_json)}")
+    if strategy_json:
+        query_params.append(f"strategy={quote(strategy_json)}")
+    if strict_mode is not None:
+        query_params.append(f"strict_mode={str(strict_mode).lower()}")
+
+    if query_params:
+        url += "?" + "&".join(query_params)
+
     resp = requests.post(
         url, data=data, files=files, headers=headers,
         timeout=int(st.session_state.get("timeout_sec", DEFAULT_TIMEOUT_SEC))
