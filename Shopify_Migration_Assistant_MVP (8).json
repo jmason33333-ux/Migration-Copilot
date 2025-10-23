@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Input: items[] with .json rows from Extract From File\n// Output: single item with headers[], sample[], rows[], AND preserved webhook metadata\n\nconst rows = items.map(i => i.json);\nconst headers = Array.from(new Set(rows.flatMap(r => Object.keys(r))));\nconst sample = rows.slice(0, 50);\n\n// CRITICAL: Preserve webhook metadata from the first item\nconst firstItem = items[0]?.json || {};\n\nconsole.log('=== SAMPLE HEADERS DEBUG ===');\nconsole.log('First item keys:', Object.keys(firstItem));\nconsole.log('Has query?', !!firstItem.query);\nconsole.log('query keys:', firstItem.query ? Object.keys(firstItem.query) : []);\nconsole.log('overrides_json from first item:', firstItem.overrides_json?.substring?.(0, 100));\nconsole.log('strategy_json from first item:', firstItem.strategy_json);\nconsole.log('strict_mode from first item:', firstItem.strict_mode);\n\n// Build output with both CSV data and webhook metadata\n// CRITICAL: Preserve query and params objects which contain URL query parameters\nconst output = {\n  headers,\n  sample,\n  rows,\n  // Preserve query params (highest priority for overrides/strategy)\n  query: firstItem.query,\n  params: firstItem.params,\n  // Also preserve other metadata for backwards compatibility\n  strict_mode: firstItem.strict_mode,\n  strategy_json: firstItem.strategy_json,\n  overrides_json: firstItem.overrides_json,\n  body: firstItem.body,\n  headers: firstItem.headers,\n};\n\nconsole.log('Output has query?', !!output.query);\nconsole.log('Output query keys:', output.query ? Object.keys(output.query) : []);\nconsole.log('=== END DEBUG ===');\n\nreturn [{ json: output }];\n"
+        "jsCode": "// Input 0: CSV rows from Extract From File\n// Input 1: Webhook metadata from Ensure Binary 'file' (has query params!)\n// Output: single item with headers[], sample[], rows[], AND preserved webhook metadata\n\n// Get CSV rows from input 0 (Extract from File)\nconst csvItems = $input.all(0) || [];\nconst rows = csvItems.map(i => i.json);\nconst headers = Array.from(new Set(rows.flatMap(r => Object.keys(r))));\nconst sample = rows.slice(0, 50);\n\n// CRITICAL: Get webhook metadata from input 1 (bypasses Extract from File!)\nconst webhookData = $input.first(1)?.json || {};\n\nconsole.log('=== SAMPLE HEADERS DEBUG ===');\nconsole.log('CSV rows from input 0:', csvItems.length);\nconsole.log('Webhook data from input 1:', !!webhookData);\nconsole.log('Webhook data keys:', Object.keys(webhookData));\nconsole.log('Has query from webhook?', !!webhookData.query);\nconsole.log('query keys from webhook:', webhookData.query ? Object.keys(webhookData.query) : []);\nif (webhookData.query) {\n  console.log('query.overrides:', webhookData.query.overrides?.substring?.(0, 100));\n  console.log('query.strategy:', webhookData.query.strategy);\n}\n\n// Build output with both CSV data and webhook metadata\n// CRITICAL: Preserve query and params objects which contain URL query parameters\nconst output = {\n  headers,\n  sample,\n  rows,\n  // CRITICAL: Use query params from webhook data (input 1)\n  query: webhookData.query || {},\n  params: webhookData.params || {},\n  // Also preserve other webhook metadata for backwards compatibility\n  strict_mode: webhookData.strict_mode,\n  strategy_json: webhookData.strategy_json,\n  overrides_json: webhookData.overrides_json,\n  body: webhookData.body,\n  headers: webhookData.headers,\n};\n\nconsole.log('Output has query?', !!output.query);\nconsole.log('Output query keys:', output.query ? Object.keys(output.query) : []);\nconsole.log('=== END DEBUG ===');\n\nreturn [{ json: output }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -800,13 +800,18 @@
         ]
       ]
     },
-    "Ensure Binary ‘file’": {
+    "Ensure Binary 'file'": {
       "main": [
         [
           {
             "node": "Extract from File",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "SampleHeaders",
+            "type": "main",
+            "index": 1
           }
         ]
       ]
